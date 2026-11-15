@@ -857,7 +857,7 @@
 <!-- TOAST -->
 <div class="toast" id="toast"><span id="toastMsg"></span></div>
 
-<!-- MODAL for document request -->
+<!-- MODAL for document request (RESTORED) -->
 <div class="modal-overlay" id="docModalOverlay">
   <div class="modal" id="docModal">
     <button class="modal-close" id="docModalClose">×</button>
@@ -1165,6 +1165,136 @@ function renderFooterSocial() {
 }
 
 // ============================================================
+// DOCUMENT REQUEST MODAL (RESTORED)
+// ============================================================
+function openDocModal() {
+  $('#docModalContent').innerHTML = `
+    <h3>Request Documents</h3>
+    <p class="modal-sub">Select the documents you'd like to receive. I'll get back to you within 24 hours.</p>
+    <form id="docRequestForm">
+      <div class="form-group">
+        <label>Your Name <span class="req">*</span></label>
+        <input type="text" id="docName" required placeholder="Full name">
+      </div>
+      <div class="form-group">
+        <label>Email <span class="req">*</span></label>
+        <input type="email" id="docEmail" required placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label>Document Type <span class="req">*</span></label>
+        <select id="docType" required>
+          <option value="">Select document type</option>
+          <option value="Resume / CV">Resume / CV</option>
+          <option value="HVAC Design Portfolio">HVAC Design Portfolio</option>
+          <option value="MEP Project Case Studies">MEP Project Case Studies</option>
+          <option value="Software Testing Samples">Software Testing Samples</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Additional Notes</label>
+        <textarea id="docNotes" placeholder="Any specific requirements or context..."></textarea>
+      </div>
+      <div class="alert alert-success" id="docSuccess"></div>
+      <div class="alert alert-error" id="docError"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="docSubmit">
+        <span>Request Documents</span>
+      </button>
+    </form>
+  `;
+
+  $('#docRequestForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = $('#docSubmit');
+    const name = $('#docName').value.trim();
+    const email = $('#docEmail').value.trim();
+    const docType = $('#docType').value;
+    const notes = $('#docNotes').value.trim();
+
+    if (!name || !email || !docType) {
+      const err = $('#docError');
+      err.textContent = 'Please fill in all required fields.';
+      err.classList.add('show');
+      setTimeout(() => err.classList.remove('show'), 5000);
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      const err = $('#docError');
+      err.textContent = 'Please enter a valid email address.';
+      err.classList.add('show');
+      setTimeout(() => err.classList.remove('show'), 5000);
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = 'Sending…';
+
+    try {
+      const { error } = await db.from('document_requests').insert([{
+        name, email, document_type: docType, notes, status: 'pending'
+      }]);
+      if (error) throw error;
+
+      // Optionally send notification via Brevo
+      const adminEmail = settings.admin_notify_email || settings.smtp_from_email || settings.email;
+      if (adminEmail) {
+        sendEmailViaBrevo({
+          to: adminEmail,
+          subject: '📄 Document Request: ' + docType,
+          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+            <h2 style="color:#102A43;border-bottom:2px solid #2463EB;padding-bottom:10px">📄 New Document Request</h2>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0">
+              <tr><td style="padding:10px;background:#F7F9FC;font-weight:bold;border:1px solid #E5EAF0;width:110px">Name</td><td style="padding:10px;border:1px solid #E5EAF0">${esc(name)}</td></tr>
+              <tr><td style="padding:10px;background:#F7F9FC;font-weight:bold;border:1px solid #E5EAF0">Email</td><td style="padding:10px;border:1px solid #E5EAF0"><a href="mailto:${esc(email)}">${esc(email)}</a></td></tr>
+              <tr><td style="padding:10px;background:#F7F9FC;font-weight:bold;border:1px solid #E5EAF0">Document Type</td><td style="padding:10px;border:1px solid #E5EAF0">${esc(docType)}</td></tr>
+              <tr><td style="padding:10px;background:#F7F9FC;font-weight:bold;border:1px solid #E5EAF0;vertical-align:top">Notes</td><td style="padding:10px;border:1px solid #E5EAF0;white-space:pre-wrap">${esc(notes || '—')}</td></tr>
+            </table>
+            <p style="color:#64748B;font-size:12px;margin-top:20px">Sent from your website document request form · ${new Date().toLocaleString()}</p>
+          </div>`,
+          text: `New document request from ${name} (${email})\nType: ${docType}\nNotes: ${notes || '—'}`
+        }).catch(console.error);
+      }
+
+      const success = $('#docSuccess');
+      success.textContent = '✅ Request submitted! I\'ll send the documents to your email within 24 hours.';
+      success.classList.add('show');
+      setTimeout(() => {
+        success.classList.remove('show');
+        closeDocModal();
+      }, 3000);
+    } catch (err) {
+      console.error(err);
+      const errorEl = $('#docError');
+      errorEl.textContent = '❌ Failed to submit request. Please try again or contact directly.';
+      errorEl.classList.add('show');
+      setTimeout(() => errorEl.classList.remove('show'), 5000);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<span>Request Documents</span>';
+    }
+  });
+
+  $('#docModalOverlay').classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDocModal() {
+  $('#docModalOverlay').classList.remove('active');
+  document.body.style.overflow = '';
+}
+
+// Modal close handlers
+$('#docModalClose').addEventListener('click', closeDocModal);
+$('#docModalOverlay').addEventListener('click', e => {
+  if (e.target.id === 'docModalOverlay') closeDocModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('#docModalOverlay').classList.contains('active')) {
+    closeDocModal();
+  }
+});
+
+// ============================================================
 // LOAD CONTENT
 // ============================================================
 async function loadExperiences() {
@@ -1438,7 +1568,6 @@ $('#footerYear').textContent = new Date().getFullYear();
     loadGallery(),
     loadFaqs()
   ]);
-  // Ensure auto-slide starts even if gallery images load later
   if (gallerySliderImages.length > 1) startAutoSlide();
 })();
 
@@ -1452,6 +1581,9 @@ if (sliderWrap) {
     if (gallerySliderImages.length > 1) startAutoSlide();
   });
 }
+
+// Expose openDocModal globally so it can be called from anywhere
+window.openDocModal = openDocModal;
 </script>
 </body>
 </html>
